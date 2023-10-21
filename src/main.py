@@ -17,6 +17,7 @@ from util import *
 from client import *
 from strat import *
 from server import Server
+from pServer import pServer
 from clientmanager import SimpleClientManager
 
 client_resources  = None
@@ -27,8 +28,8 @@ print(
 fl.simulation.start_simulation(
     client_fn=client_fn,
     num_clients=10,
-    server = Server(client_manager=SimpleClientManager()),
-    config=fl.server.ServerConfig(num_rounds=50),
+    server = pServer(client_manager=SimpleClientManager()),
+    config=fl.server.ServerConfig(num_rounds=1),
     client_resources=client_resources,
     strategy = FedAvg(),
 )

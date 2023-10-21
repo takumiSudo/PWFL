@@ -298,7 +298,7 @@ class Server:
         plt.title('Times of Each Round')
         plt.legend()
         plt.grid(True)
-        plt.savefig('./img/round_time_log.png')
+        plt.savefig('./img/Server_round_time_log.png')
 
 
 def reconnect_clients(

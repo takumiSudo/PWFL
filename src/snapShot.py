@@ -1,22 +1,13 @@
-# Copyright 2020 Flower Labs GmbH. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
-"""parallel weights Flower server."""
+"""
+
+::::::::::::::::::::
+SNAPSHOT ARCHIVE of the pServers
+::::::::::::::::::::
+
+"""
 
 
 import concurrent.futures
-from  concurrent.futures import ProcessPoolExecutor
 import timeit
 from logging import DEBUG, INFO
 from typing import Dict, List, Optional, Tuple, Union
@@ -56,7 +47,7 @@ ReconnectResultsAndFailures = Tuple[
 ]
 
 
-class pServer:
+class pServer_snap01:
     """Parallel Weights Flower server."""
 
     def __init__(
@@ -116,28 +107,30 @@ class pServer:
         for current_round in range(1, num_rounds + 1):
             # Train model and replace previous global model
             round_time_start = timeit.default_timer()
+            res_fit = self.fit_round(
+                server_round=current_round,
+                timeout=timeout,
+                weight_id= 0
+            )
+            res_fit = self.fit_round(
+                server_round=current_round,
+                timeout=timeout,
+                weight_id= 1
+            )
+            if res_fit is not None:
+                parameters_prime, fit_metrics, _ , weight_id= res_fit  # fit_metrics_aggregated
+                if parameters_prime and weight_id == 0:
+                    self.parameters_zero = parameters_prime
+                elif parameters_prime and weight_id == 1:
+                    self.parameters_one = parameters_prime
+                history.add_metrics_distributed_fit(
+                    server_round=current_round, metrics=fit_metrics
+                )
 
-            with ProcessPoolExecutor(max_workers=2) as executor:
-                futures = [
-                    executor.submit(self.fit_round, server_round=current_round, timeout=timeout, weight_id=0),
-                    executor.submit(self.fit_round, server_round=current_round, timeout=timeout, weight_id=1)
-                ]
-                for future in futures:
-                    res_fit = future.result()
-                    if res_fit:
-                        parameters_prime, fit_metrics, _, weight_id = res_fit
-                        if parameters_prime and weight_id == 0:
-                            self.parameters_zero = parameters_prime
-                        elif parameters_prime and weight_id == 1:
-                            self.parameters_one = parameters_prime
-                        history.add_metrics_distributed_fit(server_round=current_round, metrics=fit_metrics)
-    
+            # Evaluate model using strategy implementation
 
-            with ProcessPoolExecutor(max_workers=2) as executor:
-                future_zero = executor.submit(self.strategy.evaluate, current_round, parameters=self.parameters_zero)
-                future_one = executor.submit(self.strategy.evaluate, current_round, parameters=self.parameters_one)
-                res_cen_zero, res_cen_one = future_zero.result(), future_one.result()
-
+            res_cen_zero = self.strategy.evaluate(current_round, parameters=self.parameters_zero)
+            res_cen_one = self.strategy.evaluate(current_round, parameters=self.parameters_one)
             if res_cen_zero is not None:
                 loss_cen, metrics_cen = res_cen_zero
                 log(
@@ -168,12 +161,9 @@ class pServer:
                     server_round=current_round, metrics=metrics_cen
                 )
 
-            ## Parallelize evaluation rounds
-            with ProcessPoolExecutor(max_workers=2) as executor:
-                future_eval_zero = executor.submit(self.evaluate_round, server_round=current_round, timeout=timeout, weight_id=0)
-                future_eval_one = executor.submit(self.evaluate_round, server_round=current_round, timeout=timeout, weight_id=1)
-                res_fed_zero, res_fed_one = future_eval_zero.result(), future_eval_one.result()
-
+            # Evaluate model on a sample of available clients
+            res_fed_zero = self.evaluate_round(server_round=current_round, timeout=timeout, weight_id=0)
+            res_fed_one = self.evaluate_round(server_round=current_round, timeout=timeout, weight_id=1)
             if res_fed_zero is not None:
                 loss_fed, evaluate_metrics_fed, _ = res_fed_zero
                 if loss_fed is not None:
@@ -194,9 +184,11 @@ class pServer:
                         server_round=current_round, metrics=evaluate_metrics_fed
                     )
 
+
             round_time_end = timeit.default_timer()
             timeRound = round_time_end - round_time_start
             self.log.append(timeRound)
+
 
         # Bookkeeping
         end_time = timeit.default_timer()
