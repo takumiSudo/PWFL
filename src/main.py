@@ -18,18 +18,21 @@ from client import *
 from strat import *
 from server import Server
 from pServer import pServer
+from zeroServer import zServer
 from clientmanager import SimpleClientManager
 
-client_resources  = None
+if __name__ == "__main__":
+    
+    client_resources  = None
 
-print(
-    f"Training on {DEVICE} using PyTorch {torch.__version__} and Flower {fl.__version__}"
-)
-fl.simulation.start_simulation(
-    client_fn=client_fn,
-    num_clients=10,
-    server = pServer(client_manager=SimpleClientManager()),
-    config=fl.server.ServerConfig(num_rounds=1),
-    client_resources=client_resources,
-    strategy = FedAvg(),
-)
+    print(
+        f"Training on {DEVICE} using PyTorch {torch.__version__} and Flower {fl.__version__}"
+    )
+    fl.simulation.start_simulation(
+        client_fn=client_fn,
+        num_clients=10,
+        server = pServer(client_manager=SimpleClientManager()),
+        config=fl.server.ServerConfig(num_rounds=1),
+        client_resources=client_resources,
+        # strategy = FedAvg(),
+    )

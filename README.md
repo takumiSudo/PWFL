@@ -33,3 +33,7 @@ the orginal server.
 - [ ] Use thread to concurrently run the weights
 - [ ] Need to configure how to select the clients for the weights, creating a subset
 - [ ] Create a wrapper class for the weights, so more than two can be implemented 
+
+
+10.27.23
+The Problem seems to be client modules and others not being able to imported by the future workers in the process 

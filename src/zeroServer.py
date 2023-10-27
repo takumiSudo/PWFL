@@ -1,20 +1,4 @@
-# Copyright 2020 Flower Labs GmbH. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
-"""parallel weights Flower server."""
-
-
+"""re-creating the server from scratch"""
 import concurrent.futures
 from  concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import timeit
@@ -59,89 +43,59 @@ ReconnectResultsAndFailures = Tuple[
 import os
 cdir = os.getcwd()
 
-class pServer:
-    """Parallel Weights Flower server."""
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+pParameters = Tuple[
+    Parameters(tensors = [], tensor_type = "numpy.ndaarray"), 
+    Parameters(tensors = [], tensor_type = "numpy.ndaarray"),
+]
+
+class zServer:
 
     def __init__(
         self,
         *,
-        client_manager: ClientManager,
-        strategy: Optional[Strategy] = None,
+        client_manager : ClientManager, 
+        strategy: Optional[Strategy] = None, 
     ) -> None:
-        self._client_manager: ClientManager = client_manager
-        self.parameters_zero: Parameters = Parameters(
-            tensors=[], tensor_type="numpy.ndarray"
-        )
-        self.parameters_one : Parameters = Parameters(
-            tensors=[], tensor_type="numpy.ndarray"
-        )
+
+        self._client_manager: ClientManger = client_manager
+        self.p_parameters : pParameters = pParameters
         self.strategy: Strategy = strategy if strategy is not None else FedAvg()
-        self.max_workers: Optional[int] = None
+        self.max_workers = Optional[int] = None
         self.log = []
 
-    def set_max_workers(self, max_workers: Optional[int]) -> None:
-        """Set the max_workers used by ThreadPoolExecutor."""
-        self.max_workers = max_workers
 
-    def set_strategy(self, strategy: Strategy) -> None:
-        """Replace server strategy."""
-        self.strategy = strategy
-
-    def client_manager(self) -> ClientManager:
-        """Return ClientManager."""
-        return self._client_manager
-
-    # pylint: disable=too-many-local
     def fit(self, num_rounds: int, timeout: Optional[float]) -> History:
-        """Run federated averaging for a number of rounds."""
+
         history = History()
-
-        # Initialize parameters
-        log(INFO, "Initializing global parameters")
-        self.parameters_zero, self.parameters_one = self._get_initial_parameters(timeout=timeout)
-        log(INFO, "Evaluating initial parameters")
-        res = self.strategy.evaluate(0, parameters=self.parameters_zero)
-        if res is not None:
-            log(
-                INFO,
-                "initial parameters (loss, other metrics): %s, %s",
-                res[0],
-                res[1],
-            )
-            history.add_loss_centralized(server_round=0, loss=res[0])
-            history.add_metrics_centralized(server_round=0, metrics=res[1])
-
-
-        # Run federated learning for num_rounds
+        
+        log(INFO, "Init Parameters")
+        self.p_parameters = self._get_initial_parameters(timeout=timeout)
+        
         log(INFO, "PWFL starting")
         start_time = timeit.default_timer()
 
         for current_round in range(1, num_rounds + 1):
-            # Train model and replace previous global model
+
             round_time_start = timeit.default_timer()
 
-            with ProcessPoolExecutor(max_workers=2) as executor:
-                log(INFO, "processpool Executor 1 started")
+            with ProcessPoolExecutor(max_worker = 2) as executor:
+
                 futures = [
-                    executor.submit(self.fit_round, server_round=current_round, timeout=timeout, weight_id=0),
-                    executor.submit(self.fit_round, server_round=current_round, timeout=timeout, weight_id=1)
+                    executor.submit(fit_round, server_round=current_round, timeout=timeout, parameter=p_parameters[0], _strategy=self.strategy, _client_manager=self._client_manager, weight_id=0)
+                    executor.submit(fit_round, server_round=current_round, timeout=timeout, p_parameters[1], _strategy = self.strategy, _client_manager =  self._client_manager, weightid = 1)
                 ]
 
-                # futures = [executor.submit(self.fit_round, server_round=current_round, timeout=timeout, wid = 0)]
-
-                # sleep(0.5)
-                # futures.append(executor.submit(self.fit_round, server_round=current_round, timeout=timeout, wid = 1))
-
                 for future in futures:
-                    res_fit = future.result() # this is causing the problem
+                    res_fit = future.result()
                     if res_fit:
                         parameters_prime, fit_metrics, _, weight_id = res_fit
-                        if parameters_prime and weight_id == 0:
-                            self.parameters_zero = parameters_prime
-                        elif parameters_prime and weight_id == 1:
-                            self.parameters_one = parameters_prime
+                        self.p_parameters[weight_id] = parameters_prime
                         history.add_metrics_distributed_fit(server_round=current_round, metrics=fit_metrics)
-    
+
+    """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""         
+    #quarantine
 
             with ProcessPoolExecutor(max_workers=2) as executor:
                 future_zero = executor.submit(self.strategy.evaluate, current_round, parameters=self.parameters_zero)
@@ -214,157 +168,18 @@ class pServer:
         log(INFO, "FL finished in %s", elapsed)
         self.round_time()
         return history
+    """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+  
+        
+    def _get_initial_parameters(self, timeout: Optional[float]) -> pParameters:
 
-    def evaluate_round(
-        self,
-        server_round: int,
-        timeout: Optional[float],
-        weight_id: int
-    ) -> Optional[
-        Tuple[Optional[float], Dict[str, Scalar], EvaluateResultsAndFailures]
-    ]:
-        if weight_id == 0 :
-            parameter = self.parameters_zero
-        else : 
-            parameter = self.parameters_one
-        """Validate current global model on a number of clients."""
-        # Get clients and their respective instructions from strategy
-        client_instructions = self.strategy.configure_evaluate(
-            server_round=server_round,
-            parameters=parameter,
-            client_manager=self._client_manager,
-        )
-        if not client_instructions:
-            log(INFO, "evaluate_round %s: no clients selected, cancel", server_round)
-            return None
-        log(
-            DEBUG,
-            "evaluate_round %s: strategy sampled %s clients (out of %s)",
-            server_round,
-            len(client_instructions),
-            self._client_manager.num_available(),
-        )
-
-        # Collect `evaluate` results from all clients participating in this round
-        results, failures = evaluate_clients(
-            client_instructions,
-            max_workers=self.max_workers,
-            timeout=timeout,
-        )
-        log(
-            DEBUG,
-            "evaluate_round %s received %s results and %s failures",
-            server_round,
-            len(results),
-            len(failures),
-        )
-
-        # Aggregate the evaluation results
-        aggregated_result: Tuple[
-            Optional[float],
-            Dict[str, Scalar],
-        ] = self.strategy.aggregate_evaluate(server_round, results, failures)
-
-        loss_aggregated, metrics_aggregated = aggregated_result
-        return loss_aggregated, metrics_aggregated, (results, failures)
-
-    def fit_round(
-        self,
-        server_round: int,
-        timeout: Optional[float],
-        weight_id : int,
-    ) -> Optional[
-        Tuple[Optional[Parameters], Dict[str, Scalar], FitResultsAndFailures]
-    ]: 
-        import fl
-        from flwr.common import (
-            Code,
-            DisconnectRes,
-            EvaluateIns,
-            EvaluateRes,
-            FitIns,
-            FitRes,
-            Parameters,
-            ReconnectIns,
-            Scalar,
-        )
-        from flwr import simulation
-        from flwr.common.logger import log
-        from flwr.common.typing import GetParametersIns
-        from flwr.server.client_manager import ClientManager
-        from flwr.server.client_proxy import ClientProxy
-        from flwr.server.history import History
-        from flwr.server.strategy import FedAvg, Strategy
-        from _parameters import Parameters
-        if weight_id == 0 :
-            parameter = self.parameters_zero
-        else : 
-            parameter = self.parameters_one
-        """Perform a single round of federated averaging."""
-        # Get clients and their respective instructions from strategy
-        client_instructions = self.strategy.configure_fit(
-            server_round=server_round,
-            parameters= parameter,
-            client_manager=self._client_manager,
-        )
-
-        if not client_instructions:
-            log(INFO, "fit_round %s: no clients selected, cancel", server_round)
-            return None
-        log(
-            DEBUG,
-            "fit_round %s: strategy sampled %s clients (out of %s)",
-            server_round,
-            len(client_instructions),
-            self._client_manager.num_available(),
-        )
-
-        # Collect `fit` results from all clients participating in this round
-        results, failures = fit_clients(
-            client_instructions=client_instructions,
-            max_workers=self.max_workers,
-            timeout=timeout,
-        )
-        log(
-            DEBUG,
-            "fit_round %s received %s results and %s failures",
-            server_round,
-            len(results),
-            len(failures),
-        )
-
-        # Aggregate training results
-        aggregated_result: Tuple[
-            Optional[Parameters],
-            Dict[str, Scalar],
-        ] = self.strategy.aggregate_fit(server_round, results, failures)
-
-        parameters_aggregated, metrics_aggregated = aggregated_result
-        return parameters_aggregated, metrics_aggregated, (results, failures), weight_id
-
-    def disconnect_all_clients(self, timeout: Optional[float]) -> None:
-        """Send shutdown signal to all clients."""
-        all_clients = self._client_manager.all()
-        clients = [all_clients[k] for k in all_clients.keys()]
-        instruction = ReconnectIns(seconds=None)
-        client_instructions = [(client_proxy, instruction) for client_proxy in clients]
-        _ = reconnect_clients(
-            client_instructions=client_instructions,
-            max_workers=self.max_workers,
-            timeout=timeout,
-        )
-
-    def _get_initial_parameters(self, timeout: Optional[float]) -> Tuple[Parameters, Parameters]:
-        """Get initial parameters from one of the available clients."""
-        # Server-side parameter initialization
-        parameters: Optional[Parameters] = self.strategy.initialize_parameters(
+        parameters = Optional[Parameters] = self.strategy.initialize_parameters(
             client_manager=self._client_manager
         )
         if parameters is not None:
             log(INFO, "Using initial parameters provided by strategy")
             return parameters
 
-        # Get initial parameters from one of the clients
         log(INFO, "Requesting initial parameters from two random client")
         random_client_zero = self._client_manager.sample(1)[0]
         random_client_one = self._client_manager.sample(1)[0]
@@ -372,8 +187,7 @@ class pServer:
         get_parameters_res_zero = random_client_zero.get_parameters(ins=ins, timeout=timeout)
         get_parameters_res_one = random_client_one.get_parameters(ins=ins, timeout=timeout)
         log(INFO, "Received initial parameters from one random client")
-        return get_parameters_res_zero.parameters, get_parameters_res_one.parameters
-    
+        return Tuple[get_parameters_res_zero.parameters, get_parameters_res_one.parameters]
 
     def round_time(self):
 
@@ -387,6 +201,54 @@ class pServer:
         plt.grid(True)
         plt.savefig('./img/pServer_round_time_log.png')
 
+
+
+def fit_round(
+    server_round : int,
+    timeout: Optional[float], 
+    parameter : Parameters,
+    _strategy : Strategy,
+    _client_manager : ClientManager,
+    weight_id : int, 
+) -> Optional[
+    Tuple[Optional[Parameters], Dict[str, Scalar], FitResultsAndFailures]
+]:
+
+    client_instructions = _strategy.configure_fit(
+        server_round = server_round,
+        parameters = parameter,
+        client_manager = _client_manager
+    )
+
+    log(
+        DEBUG, 
+        "fit_round %s: strategy sampled %s clients (out of %s)",
+        server_round, len(client_instructions), _client_manager.num_available(), 
+    )
+
+    results, failures = fit_clients(
+        client_instructions=client_instructions,
+        max_workers=self.max_workers,
+        timeout=timeout,
+    )
+    log(
+        DEBUG,
+        "fit_round %s received %s results and %s failures",
+        server_round,
+        len(results),
+        len(failures),
+    )
+
+    aggregate_results: Tuple[
+        Optional[Parameters], 
+        Dict[str, Scalar], 
+    ] = _strategy.aggregate_fit(server_round, results, failures)
+
+    parameters_aggregated, metrics_aggregated = aggregated_result
+    return parameters_aggregated, metrics_aggregated, (results, failures), weight_id
+
+
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""" 
 
 def reconnect_clients(
     client_instructions: List[Tuple[ClientProxy, ReconnectIns]],

@@ -59,7 +59,7 @@ ReconnectResultsAndFailures = Tuple[
 import os
 cdir = os.getcwd()
 
-class pServer:
+class unnest_pServer:
     """Parallel Weights Flower server."""
 
     def __init__(
@@ -126,11 +126,6 @@ class pServer:
                     executor.submit(self.fit_round, server_round=current_round, timeout=timeout, weight_id=0),
                     executor.submit(self.fit_round, server_round=current_round, timeout=timeout, weight_id=1)
                 ]
-
-                # futures = [executor.submit(self.fit_round, server_round=current_round, timeout=timeout, wid = 0)]
-
-                # sleep(0.5)
-                # futures.append(executor.submit(self.fit_round, server_round=current_round, timeout=timeout, wid = 1))
 
                 for future in futures:
                     res_fit = future.result() # this is causing the problem
@@ -386,6 +381,59 @@ class pServer:
         plt.legend()
         plt.grid(True)
         plt.savefig('./img/pServer_round_time_log.png')
+
+def fit_round(
+    server_round: int,
+    timeout: Optional[float],
+    weight_id : int,
+) -> Optional[
+    Tuple[Optional[Parameters], Dict[str, Scalar], FitResultsAndFailures]
+]: 
+    if weight_id == 0 :
+        parameter = parameters_zero
+    else : 
+        parameter = self.parameters_one
+    """Perform a single round of federated averaging."""
+    # Get clients and their respective instructions from strategy
+    client_instructions = self.strategy.configure_fit(
+        server_round=server_round,
+        parameters= parameter,
+        client_manager=self._client_manager,
+    )
+
+    if not client_instructions:
+        log(INFO, "fit_round %s: no clients selected, cancel", server_round)
+        return None
+    log(
+        DEBUG,
+        "fit_round %s: strategy sampled %s clients (out of %s)",
+        server_round,
+        len(client_instructions),
+        self._client_manager.num_available(),
+    )
+
+    # Collect `fit` results from all clients participating in this round
+    results, failures = fit_clients(
+        client_instructions=client_instructions,
+        max_workers=self.max_workers,
+        timeout=timeout,
+    )
+    log(
+        DEBUG,
+        "fit_round %s received %s results and %s failures",
+        server_round,
+        len(results),
+        len(failures),
+    )
+
+    # Aggregate training results
+    aggregated_result: Tuple[
+        Optional[Parameters],
+        Dict[str, Scalar],
+    ] = self.strategy.aggregate_fit(server_round, results, failures)
+
+    parameters_aggregated, metrics_aggregated = aggregated_result
+    return parameters_aggregated, metrics_aggregated, (results, failures), weight_id
 
 
 def reconnect_clients(
