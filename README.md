@@ -1,6 +1,6 @@
 <p><a target="_blank" href="https://app.eraser.io/workspace/I6cZQSI0T1GLRu3oYoJp" id="edit-in-eraser-github-link"><img alt="Edit in Eraser" src="https://firebasestorage.googleapis.com/v0/b/second-petal-295822.appspot.com/o/images%2Fgithub%2FOpen%20in%20Eraser.svg?alt=media&amp;token=968381c8-a7e7-472a-8ed6-4a6626da5501"></a></p>
 
-# Federated Learning Test Environment
+# Parallel Federated Learning Test Environment
 Testing on the hypothesis that the server side idle time can be utilized for a better optimization.
 While there are some research on PFL(Parallel Federated Learning), which has parallel servers that run concurrently to achieve
 a faster convergence rate.
