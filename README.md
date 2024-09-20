@@ -38,7 +38,7 @@ The Problem seems to be client modules and others not being able to imported by 
 
 
 
-## Research Proposal 11/09/23
+## Research Proposal 2024
 [﻿Research Proposal Takumi Sudo: View on canvas](https://app.eraser.io/workspace/vvNaQPP5WrZE52aa4gdQ) 
 
 
